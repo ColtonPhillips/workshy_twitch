@@ -34,6 +34,9 @@ fn main() {
         }
     };
 
+    let mut searchable_games = crate::game_list::read_game_list("games.txt").unwrap_or_default();
+    searchable_games.extend(games_library);
+
     // Retrieve credentials from environment variables
     let twitch_client_id =
         env::var("TWITCH_CLIENT_ID").expect("Missing TWITCH_CLIENT_ID environment variable");
@@ -43,7 +46,7 @@ fn main() {
     // Get OAuth token for Twitch
     let token = twitch_api::get_twitch_token(&twitch_client_id, &twitch_client_secret);
 
-    let mut game_datas = fetch_all_game_data(games_library, &token, &twitch_client_id);
+    let mut game_datas = fetch_all_game_data(searchable_games, &token, &twitch_client_id);
 
     for game_data in game_datas.iter_mut() {
         let total_viewers =
@@ -63,6 +66,8 @@ fn main() {
     for game_data in game_datas {
         let total_viewers =
             get_total_viewers(game_data["id"].to_string(), &token, &twitch_client_id);
-        println!("{} | {}", game_data["name"], total_viewers);
+        if total_viewers > 0 {
+            println!("{} | {}", game_data["name"], total_viewers);
+        }
     }
 }
