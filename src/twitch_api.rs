@@ -34,12 +34,12 @@ pub fn get_game_data(game_name: &str, token: &str, client_id: &str) -> Result<Va
     // .unwrap()
 }
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // Assuming get_game_data returns a Result<HashMap<String, String>, Error>
 // or something similar where game data is returned as a map (e.g., game name, viewer count)
 pub fn fetch_all_game_data(
-    games: Vec<String>,
+    games: HashSet<String>,
     token: &str,
     client_id: &str,
 ) -> Vec<HashMap<String, String>> {

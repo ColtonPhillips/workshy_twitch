@@ -4,13 +4,13 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Result, Write};
 
 /// Reads the game list from the specified file
-pub fn read_game_list(file_path: &str) -> Result<Vec<String>> {
+pub fn read_game_list(file_path: &str) -> Result<HashSet<String>> {
     let file = File::open(file_path)?;
     let reader = BufReader::new(file);
 
-    let mut games = Vec::new();
+    let mut games = HashSet::new();
     for line in reader.lines() {
-        games.push(line?);
+        games.insert(line?);
     }
 
     Ok(games)

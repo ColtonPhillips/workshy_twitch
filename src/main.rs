@@ -27,24 +27,24 @@ fn main() {
 
     let custom_games = crate::game_list::read_game_list("custom_games.txt").unwrap_or_default();
     let steam_games_library = get_steam_library(&steam_api_key, &steam_id).unwrap_or_default();
-    let mut searchable_games = vec![];
+    let mut searchable_games = HashSet::new();
     searchable_games.extend(steam_games_library);
 
     let twitch_token = twitch_api::get_twitch_token(&twitch_client_id, &twitch_client_secret);
 
     // Search and Destroy
-    // then fetch and store a hashmap of for each game's stats
-    // Sort the game data by total viewers in descending order
-    // Read the games (from a file) that don't get views into a hash-set,
-    // Add in any new games that don't get views, and then save over the file
-    // And print out the statistics
+    // Find games tagged as being no viewer Losers
+    // retain loser games from searchable if feature = "retain"
+    // then extend to add my custom games
+    // Fetch game data from Twitch, and save no_viewer games if feature = "losers"
+    // Print searchable games, with zero-view games if feature = "verbose"
 
     let mut no_viewers_games: HashSet<String> = game_list::read_game_list("no_viewers_games.txt")
         .unwrap_or_default()
         .into_iter()
         .collect();
 
-    if cfg!(feature = "quiet") {
+    if cfg!(feature = "retain") {
         searchable_games.retain(|game| !no_viewers_games.contains(game));
     }
 
@@ -64,6 +64,10 @@ fn main() {
         }
     }
 
+    if cfg!(feature = "losers") {
+        game_list::write_over_game_list("no_viewers_games.txt", no_viewers_games);
+    }
+
     game_datas.sort_by(|a, b| {
         // Convert viewer counts from strings to u32
         let b32: u32 = b["viewers"].parse().unwrap_or(0);
@@ -71,16 +75,15 @@ fn main() {
         b32.cmp(&a32) // Sort in descending order
     });
 
-    game_list::write_over_game_list("no_viewers_games.txt", no_viewers_games);
-
     println!("Title | Live Viewers");
+    println!("====================");
     for game_data in game_datas {
         let total_viewers = get_total_viewers(
             game_data["id"].to_string(),
             &twitch_token,
             &twitch_client_id,
         );
-        if total_viewers > 0 {
+        if total_viewers > 0 || cfg!(feature = "verbose") {
             println!("{} | {}", game_data["name"], total_viewers);
         }
     }
