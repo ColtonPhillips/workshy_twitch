@@ -7,3 +7,6 @@ edition = "2021"
 dotenvy = "0.15.7"   # For managing environment variables securely
 reqwest = { version = "0.12.7", features = ["blocking", "json"] }  # HTTP client to make requests to the Twitch API
 serde_json = "1.0"  # For handling JSON responses from Twitch API
+
+[features]
+quiet=[]

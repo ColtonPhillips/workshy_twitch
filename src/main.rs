@@ -28,7 +28,6 @@ fn main() {
     let custom_games = crate::game_list::read_game_list("custom_games.txt").unwrap_or_default();
     let steam_games_library = get_steam_library(&steam_api_key, &steam_id).unwrap_or_default();
     let mut searchable_games = vec![];
-    searchable_games.extend(custom_games);
     searchable_games.extend(steam_games_library);
 
     let twitch_token = twitch_api::get_twitch_token(&twitch_client_id, &twitch_client_secret);
@@ -40,12 +39,18 @@ fn main() {
     // Add in any new games that don't get views, and then save over the file
     // And print out the statistics
 
-    let mut game_datas = fetch_all_game_data(searchable_games, &twitch_token, &twitch_client_id);
-
     let mut no_viewers_games: HashSet<String> = game_list::read_game_list("no_viewers_games.txt")
         .unwrap_or_default()
         .into_iter()
         .collect();
+
+    if cfg!(feature = "quiet") {
+        searchable_games.retain(|game| !no_viewers_games.contains(game));
+    }
+
+    searchable_games.extend(custom_games);
+
+    let mut game_datas = fetch_all_game_data(searchable_games, &twitch_token, &twitch_client_id);
     for game_data in game_datas.iter_mut() {
         let total_viewers = get_total_viewers(
             game_data["id"].to_string(),
