@@ -49,8 +49,6 @@ pub fn fetch_all_game_data(
     for game in games {
         match get_game_data(&game, &token, &client_id) {
             Ok(game_data) => {
-                // println!("{}", game_data["data"]);
-
                 let mut game_info = HashMap::new();
                 game_info.insert("name".to_string(), game.to_string());
 

@@ -6,55 +6,59 @@ mod steam_api;
 mod twitch_api;
 
 use dotenvy::dotenv;
-use std::env;
-use steam_api::get_owned_games;
+use std::{collections::HashSet, env};
+use steam_api::get_steam_library;
 use twitch_api::{fetch_all_game_data, get_total_viewers};
 
 fn main() {
+    // mise en scène
     // Load environment variables from .env file
-    dotenv().ok();
-
     // Retrieve credentials from environment variables
-    let steam_api_key =
-        env::var("STEAM_API_KEY").expect("Missing STEAM_API_KEY environment variable");
-    let steam_id = env::var("STEAM_ID").expect("Missing STEAM_ID environment variable");
-
-    // Attempt to get the owned games
-    let games_library = match get_owned_games(&steam_api_key, &steam_id) {
-        Ok(steam_library) => {
-            // Print the list of games
-            for game in steam_library.clone() {
-                println!("{}", game);
-            }
-            steam_library
-        }
-        Err(e) => {
-            eprintln!("Failed to retrieve games: {}", e);
-            Vec::new()
-        }
-    };
-
-    let mut searchable_games = crate::game_list::read_game_list("games.txt").unwrap_or_default();
-    searchable_games.extend(games_library);
-
-    // Retrieve credentials from environment variables
-    let twitch_client_id =
-        env::var("TWITCH_CLIENT_ID").expect("Missing TWITCH_CLIENT_ID environment variable");
-    let twitch_client_secret = env::var("TWITCH_CLIENT_SECRET")
-        .expect("Missing TWITCH_CLIENT_SECRET environment variable");
-
+    // Get all of the custom games and steam games
+    // and create a "main list" of the games we shall search for
     // Get OAuth token for Twitch
-    let token = twitch_api::get_twitch_token(&twitch_client_id, &twitch_client_secret);
+    dotenv().ok();
+    let Secrets {
+        steam_api_key,
+        steam_id,
+        twitch_client_id,
+        twitch_client_secret,
+    } = get_secrets();
 
-    let mut game_datas = fetch_all_game_data(searchable_games, &token, &twitch_client_id);
+    let custom_games = crate::game_list::read_game_list("custom_games.txt").unwrap_or_default();
+    let steam_games_library = get_steam_library(&steam_api_key, &steam_id).unwrap_or_default();
+    let mut searchable_games = vec![];
+    searchable_games.extend(custom_games);
+    searchable_games.extend(steam_games_library);
 
+    let twitch_token = twitch_api::get_twitch_token(&twitch_client_id, &twitch_client_secret);
+
+    // Search and Destroy
+    // then fetch and store a hashmap of for each game's stats
+    // Sort the game data by total viewers in descending order
+    // Read the games (from a file) that don't get views into a hash-set,
+    // Add in any new games that don't get views, and then save over the file
+    // And print out the statistics
+
+    let mut game_datas = fetch_all_game_data(searchable_games, &twitch_token, &twitch_client_id);
+
+    let mut no_viewers_games: HashSet<String> = game_list::read_game_list("no_viewers_games.txt")
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
     for game_data in game_datas.iter_mut() {
-        let total_viewers =
-            get_total_viewers(game_data["id"].to_string(), &token, &twitch_client_id);
+        let total_viewers = get_total_viewers(
+            game_data["id"].to_string(),
+            &twitch_token,
+            &twitch_client_id,
+        );
+
         game_data.insert("viewers".to_string(), total_viewers.to_string());
+        if total_viewers == 0 {
+            no_viewers_games.insert(game_data["name"].clone());
+        }
     }
 
-    // Sort the game data by total viewers in descending order
     game_datas.sort_by(|a, b| {
         // Convert viewer counts from strings to u32
         let b32: u32 = b["viewers"].parse().unwrap_or(0);
@@ -62,12 +66,44 @@ fn main() {
         b32.cmp(&a32) // Sort in descending order
     });
 
+    game_list::write_over_game_list("no_viewers_games.txt", no_viewers_games);
+
     println!("Title | Live Viewers");
     for game_data in game_datas {
-        let total_viewers =
-            get_total_viewers(game_data["id"].to_string(), &token, &twitch_client_id);
+        let total_viewers = get_total_viewers(
+            game_data["id"].to_string(),
+            &twitch_token,
+            &twitch_client_id,
+        );
         if total_viewers > 0 {
             println!("{} | {}", game_data["name"], total_viewers);
         }
+    }
+}
+
+struct Secrets {
+    steam_api_key: String,
+    steam_id: String,
+    twitch_client_id: String,
+    twitch_client_secret: String,
+}
+
+fn get_secrets() -> Secrets {
+    let steam_api_key =
+        env::var("STEAM_API_KEY").expect("Missing STEAM_API_KEY environment variable");
+
+    let steam_id = env::var("STEAM_ID").expect("Missing STEAM_ID environment variable");
+
+    let twitch_client_id =
+        env::var("TWITCH_CLIENT_ID").expect("Missing TWITCH_CLIENT_ID environment variable");
+
+    let twitch_client_secret = env::var("TWITCH_CLIENT_SECRET")
+        .expect("Missing TWITCH_CLIENT_SECRET environment variable");
+
+    Secrets {
+        steam_api_key,
+        steam_id,
+        twitch_client_id,
+        twitch_client_secret,
     }
 }

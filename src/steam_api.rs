@@ -3,7 +3,7 @@ use serde_json::Value; // Import Value from serde_json
 use std::error::Error;
 
 /// Fetches the list of owned game names for a given Steam user
-pub fn get_owned_games(api_key: &str, steam_id: &str) -> Result<Vec<String>, Box<dyn Error>> {
+pub fn get_steam_library(api_key: &str, steam_id: &str) -> Result<Vec<String>, Box<dyn Error>> {
     let client = Client::new();
     let url = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/";
 
