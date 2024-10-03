@@ -34,7 +34,11 @@ pub fn get_game_data(game_name: &str, token: &str, client_id: &str) -> Result<Va
     // .unwrap()
 }
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::mpsc,
+    thread,
+};
 
 // Assuming get_game_data returns a Result<HashMap<String, String>, Error>
 // or something similar where game data is returned as a map (e.g., game name, viewer count)
@@ -75,44 +79,104 @@ pub fn fetch_all_game_data(
     game_data_list // Return the list of all the game data
 }
 
-/// Fetches the total viewer count for a game on Twitch by summing up the viewer counts of all live streams
-pub fn get_total_viewers(game_id: String, token: &str, client_id: &str) -> u64 {
+pub fn fetch_viewercounts(
+    games: HashSet<String>,
+    token: &str,
+    client_id: &str,
+) -> HashMap<String, u64> {
+    let mut handles = vec![];
+    let (tx, rx) = mpsc::channel();
+
+    for game_id in games.clone() {
+        let tx = tx.clone();
+        let token = token.to_string();
+        let client_id = client_id.to_string();
+        let bambam = game_id.clone();
+        let handle = thread::spawn(move || {
+            let viewers_count = fetch_viewers_count_per_game(game_id, &token, &client_id);
+            tx.send((bambam, viewers_count)).unwrap();
+        });
+
+        handles.push(handle);
+    }
+
+    // Wait for all threads to finish
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    // Collect results from the channel
+    let mut results = HashMap::new();
+    for _ in 0..games.len() {
+        if let Ok(result) = rx.recv() {
+            println!("{:?}{:?}", result.0, result.1);
+            results.insert(result.0, result.1);
+        }
+    }
+    results
+}
+
+/// Fetches the total viewer count for a game on Twitch by summing up the viewer counts of all live streams.
+pub fn fetch_viewers_count_per_game(game_id: String, token: &str, client_id: &str) -> u64 {
     let client = Client::new();
-    let mut total_viewers: u64 = 0;
+    let mut total_viewers = 0;
     let mut pagination_cursor: Option<String> = None;
 
     loop {
-        // Build the request
-        let mut request = client
-            .get("https://api.twitch.tv/helix/streams")
-            .query(&[("game_id", &game_id)])
-            .header("Authorization", format!("Bearer {}", token))
-            .header("Client-Id", client_id);
+        let response = fetch_streams(&client, &game_id, token, client_id, &pagination_cursor);
+        println!("{:?}", response);
+        match response {
+            Ok(res) => {
+                total_viewers += extract_viewer_counts(&res);
+                pagination_cursor = res["pagination"]["cursor"].as_str().map(|s| s.to_string());
 
-        // If there's a pagination cursor, include it in the query
-        if let Some(cursor) = &pagination_cursor {
-            request = request.query(&[("after", cursor)]);
-        }
-
-        // Send the request and parse the response
-        let res = request.send().unwrap().json::<Value>().unwrap();
-
-        // Extract streams data
-        let streams = res["data"].as_array().unwrap();
-
-        // Add up viewer counts for the current batch of streams
-        total_viewers += streams
-            .iter()
-            .map(|stream| stream["viewer_count"].as_u64().unwrap_or(0))
-            .sum::<u64>();
-
-        // Check if there's more data to paginate through
-        if let Some(cursor) = res["pagination"]["cursor"].as_str() {
-            pagination_cursor = Some(cursor.to_string());
-        } else {
-            break;
+                if pagination_cursor.is_none() {
+                    println!("{:?}", res);
+                    break;
+                }
+            }
+            Err(err) => {
+                println!("Error fetching streams: {}", err);
+                break;
+            }
         }
     }
 
     total_viewers
+}
+/// Fetch streams from Twitch API.
+fn fetch_streams(
+    client: &Client,
+    game_id: &str,
+    token: &str,
+    client_id: &str,
+    pagination_cursor: &Option<String>,
+) -> Result<Value, reqwest::Error> {
+    let mut request = client
+        .get("https://api.twitch.tv/helix/streams")
+        .query(&[("game_id", game_id)])
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Client-Id", client_id);
+
+    // Include pagination cursor if present
+    if let Some(cursor) = pagination_cursor {
+        request = request.query(&[("after", cursor)]);
+    }
+
+    // Send the request and parse the response
+    request.send()?.json()
+}
+
+/// Extract viewer counts from the response.
+fn extract_viewer_counts(res: &Value) -> u64 {
+    match res["data"].as_array() {
+        Some(streams) => streams
+            .iter()
+            .map(|stream| stream["viewer_count"].as_u64().unwrap_or(0))
+            .sum(),
+        None => {
+            println!("Failed to retrieve streams. Response structure: {:?}", res);
+            0
+        }
+    }
 }

@@ -8,7 +8,7 @@ mod twitch_api;
 use dotenvy::dotenv;
 use std::{collections::HashSet, env};
 use steam_api::get_steam_library;
-use twitch_api::{fetch_all_game_data, get_total_viewers};
+use twitch_api::fetch_all_game_data;
 
 fn main() {
     // mise en scène
@@ -28,7 +28,7 @@ fn main() {
     let custom_games = crate::game_list::read_game_list("custom_games.txt").unwrap_or_default();
     let steam_games_library = get_steam_library(&steam_api_key, &steam_id).unwrap_or_default();
     let mut searchable_games = HashSet::new();
-    searchable_games.extend(steam_games_library);
+    // searchable_games.extend(steam_games_library);
 
     let twitch_token = twitch_api::get_twitch_token(&twitch_client_id, &twitch_client_secret);
 
@@ -50,14 +50,18 @@ fn main() {
 
     searchable_games.extend(custom_games);
 
-    let mut game_datas = fetch_all_game_data(searchable_games, &twitch_token, &twitch_client_id);
-    for game_data in game_datas.iter_mut() {
-        let total_viewers = get_total_viewers(
-            game_data["id"].to_string(),
-            &twitch_token,
-            &twitch_client_id,
-        );
+    let mut game_datas =
+        fetch_all_game_data(searchable_games.clone(), &twitch_token, &twitch_client_id);
 
+    let x = crate::twitch_api::fetch_viewercounts(
+        searchable_games.clone(),
+        &twitch_token,
+        &twitch_client_id,
+    );
+    println!("{:?}", x);
+
+    for game_data in game_datas.iter_mut() {
+        let total_viewers: u64 = x[&game_data["id"]];
         game_data.insert("viewers".to_string(), total_viewers.to_string());
         if total_viewers == 0 {
             no_viewers_games.insert(game_data["name"].clone());
@@ -78,11 +82,7 @@ fn main() {
     println!("Title | Live Viewers");
     println!("====================");
     for game_data in game_datas {
-        let total_viewers = get_total_viewers(
-            game_data["id"].to_string(),
-            &twitch_token,
-            &twitch_client_id,
-        );
+        let total_viewers: u64 = game_data["viewers"].parse().unwrap_or(0);
         if total_viewers > 0 || cfg!(feature = "verbose") {
             println!("{} | {}", game_data["name"], total_viewers);
         }
